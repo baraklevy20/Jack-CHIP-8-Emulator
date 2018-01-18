@@ -1,0 +1,100 @@
+class Main {
+    function void main() {
+		var Emulator emulator;
+		var int i;
+		
+		// Initiate the math utility library
+		do MathUtils.init();
+
+		// Show the emulator instructions
+		do Main.showInstructions();
+		
+		// Create the emulator and run the game! :)
+		let emulator = Emulator.new();
+		do emulator.start();
+		
+        return;
+    }
+
+	/**
+		A function that shows the instructions for the emulator
+	*/
+	function void showInstructions() {
+		do Main.noLeakPrintString("You're about to witness something great.");
+		do Main.waitForAnyKey();
+		do Main.noLeakPrintString("Throughout the course, we had built a computer");
+		do Output.println();
+		do Main.noLeakPrintString("inside of another computer.");
+		do Main.waitForAnyKey();
+		do Main.noLeakPrintString("It is only fitting to move on to the next stage...");
+		do Main.waitForAnyKey();
+		do Main.noLeakPrintString("A computer inside a computer inside a computer!");
+		do Main.waitForAnyKey();
+		do Main.noLeakPrintString("I present to you... CHIP-8 emulator!!!");
+		do Main.waitForAnyKey();
+		
+		return;
+	}
+	
+	/**
+		A function that waits for any key to be pressed
+	*/
+	function void waitForAnyKey() {
+		var int key;
+		var boolean printDots;
+		var int i;
+		var String message;
+		var int count;
+		
+		// Wait 200ms. This makes the user avoid skipping a message without seeing it
+		do Sys.wait(200);
+		do Output.println();
+		
+		let printDots = true;
+		let count = 1;
+		let key = 0;
+		let message = "Press any key to continue...";
+		
+		// Repeat until a key is pressed
+		while (key = 0) {
+			let key = Keyboard.keyPressed();
+			
+			// Counting to 6 will have a blinking effect every half a second
+			if (count = 6) {
+				// Print dots
+				if (printDots) {
+					do Main.noLeakPrintString("Press any key to continue...");
+				}
+				else {
+					let i = 0;
+					
+					// Clear the screen to print again
+					while (i < message.length()) {
+						do Output.backSpace();
+						let i = i + 1;
+					}
+				}
+				
+				let printDots = ~printDots;
+				let count = 1;
+			}
+			
+			let count = count + 1;
+			do Sys.wait(100);
+		}
+		
+		do Output.moveCursor(0, 0);
+		do Screen.clearScreen();
+		return;
+	}
+	
+	/**
+		A non leaking print string function (with dispose)
+		@param str - the string to print
+	*/
+	function void noLeakPrintString(String str) {
+		do Output.printString(str);
+		do str.dispose();
+		return;
+	}
+}

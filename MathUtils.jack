@@ -1,0 +1,58 @@
+class MathUtils {
+	static int randomState;
+	
+	/**
+		Initiates the math utilization class with a random randomState value
+	*/
+	function void init() {		
+		let randomState = -21279; // any nonzero value is fine
+		
+		return;
+	}
+	
+	/**
+		Gets a random number between 0 and 255 (including)
+	*/
+	function int getNextRandom() {
+		var int retValue;
+		
+		//A modified Xorshift algorithm for 16bit numbers
+		let randomState = MathUtils.xor(randomState, MathUtils.shiftLeftMultiple(randomState, 6)); 
+		let randomState = MathUtils.xor(randomState, randomState / 128);
+		let randomState = MathUtils.xor(randomState, MathUtils.shiftLeftMultiple(randomState, 3));
+		
+		return randomState & 255;
+	}
+	
+	/**
+		@param a
+		@param b
+		@return a XOR b
+	*/
+	function int xor(int a, int b) {
+		return ((~a) & b) | (a & (~b));
+	}
+	
+	/**
+		@param a
+		@param b
+		@return a modulo b
+	*/
+	function int modulo(int a, int b) {
+		return a - (a / b * b);
+	}
+
+	/**
+		Shifts a number multiple times
+		@param x - the number to shift
+		@param times - how many times to shift
+	*/
+	function int shiftLeftMultiple(int x, int times) {		
+		while (times > 0) {
+			let times = times - 1;
+			let x = x + x;
+		}
+		
+		return x;
+	}
+}

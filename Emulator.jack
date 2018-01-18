@@ -1,0 +1,939 @@
+class Emulator {
+	/**
+		The memory of the CHIP-8 of size 4096 bytes (or 2048 16-bits)
+	*/
+	field Array memory;
+	
+	/**
+		The 16 8-bit registers of the CHIP-8
+	*/
+	field Array vx;
+	
+	/**
+		The stack of the CHIP-8
+	*/
+	field Array stack;
+	
+	/**
+		The currently pressed keys (the CHIP-8 keypad is a 16-key hexadecimal keypad)
+	*/
+	field Array keyPresses;
+	
+	/**
+		The screen of the CHIP-8. A 64x32 screen
+	*/
+	field Array screen;
+	
+	/**
+		The program counter of the CHIP-8
+	*/
+	field int pc;
+	
+	/**
+		The stack pointer of the CHIP-8
+	*/
+	field int stackPointer;
+	
+	/**
+		The I register (an extra register the CHIP-8 has)
+	*/
+	field int iRegister;
+	
+	/**
+		The delay timer. When it reaches 0, some events happen.
+	*/
+	field int delayTimer;
+	
+	/**
+		The screen ratio. 64x32 is a bit too small so the ratio is 4,
+		resulting in a 256x128 screen
+	*/
+	field int ratio;
+	
+	/**
+		A padding for the screen, so it won't be at coordinates 0,0
+	*/
+	field int padding;
+	
+	/**
+		Is the ROM running?
+	*/
+	field boolean isRunning;
+	
+	/**
+		The constructor initializes everything needed to run the emulator
+	*/
+	constructor Emulator new() {
+		var int i;
+		
+		// Initializing everything
+		let ratio = 4;
+		let padding = 256 - MathUtils.shiftLeftMultiple(ratio, 5); // 256 - (32 * ratio)
+		let memory = Array.new(2048); // 4096 / 2
+		let vx = Array.new(16);
+		let stack = Array.new(48);
+		let keyPresses = Array.new(16);
+		let screen = Array.new(2048); // 64 * 32
+		
+		// The first 80 bytes in memory represent the different sprites the CHIP-8 supports
+		let memory[0] = -3952;
+        let memory[1] = -28528;
+        let memory[2] = -4064;
+        let memory[3] = 24608;
+        let memory[4] = 8304;
+        let memory[5] = -4080;
+        let memory[6] = -3968;
+        let memory[7] = -3856;
+        let memory[8] = 4336;
+        let memory[9] = 4336;
+        let memory[10] = -28528;
+        let memory[11] = -4080;
+        let memory[12] = 4336;
+        let memory[13] = -32528;
+        let memory[14] = 4336;
+        let memory[15] = -3968;
+        let memory[16] = -3952;
+        let memory[17] = -3856;
+        let memory[18] = 4128;
+        let memory[19] = 16448;
+        let memory[20] = -3952;
+        let memory[21] = -3952;
+        let memory[22] = -3856;
+        let memory[23] = -28432;
+        let memory[24] = 4336;
+        let memory[25] = -3952;
+        let memory[26] = -3952;
+        let memory[27] = -28448;
+        let memory[28] = -28448;
+        let memory[29] = -28448;
+        let memory[30] = -3968;
+        let memory[31] = -32640;
+        let memory[32] = -3872;
+        let memory[33] = -28528;
+        let memory[34] = -28448;
+        let memory[35] = -3968;
+        let memory[36] = -3968;
+        let memory[37] = -3856;
+        let memory[38] = -32528;
+        let memory[39] = -32640;
+		
+		return this;
+	}
+	
+	/**
+		The start method shows the start menu of the emulator.
+		This is being called right after the constructor is being called.
+	*/
+	method void start() {
+		var int chosenRomIndex;
+		var Rom rom;
+		
+		let rom = null;
+		while (true) {
+			// Read until we get a proper ROM number
+			let chosenRomIndex = 0;
+			
+			while ((chosenRomIndex < 1) | (chosenRomIndex > 15)) {
+				let chosenRomIndex = showInstructionsAndGetRom();
+				do Screen.clearScreen();
+			}
+			
+			// Clear the screen and start the ROM
+			
+			do Screen.clearScreen();
+			
+			// Clear an older ROM used
+			if (~(rom = null)) {
+				do rom.dispose();
+			}
+			
+			// Load the rom and play it
+			let rom = Rom.new(chosenRomIndex);
+			do loadRom(rom);
+			do play(rom);
+			
+			// After the ROM was played, clear the screen and repeat
+			do Screen.clearScreen();
+		}
+		
+		return;
+	}
+	
+	/**
+		Shows the CHIP-8 key mapping and different ROMs
+		Also reads the selected ROM from the user
+		
+		@return the selected ROM index
+	*/
+	method int showInstructionsAndGetRom() {
+		var int chosenRom;
+		
+		do Output.moveCursor(0, 0);
+		do Main.noLeakPrintString("Instructions:");
+		do Output.println();
+		do Output.println();
+		do Main.noLeakPrintString("The key mapping is as follows:");
+		do Output.println();
+		do Output.println();
+		do Main.noLeakPrintString("         CHIP-8 Keypad                   VM Keyboard");
+		do Output.println();
+		do Main.noLeakPrintString("           +-+-+-+-+                      +-+-+-+-+");
+		do Output.println();
+		do Main.noLeakPrintString("           |1|2|3|C|                      |1|2|3|4|");
+		do Output.println();
+		do Main.noLeakPrintString("           +-+-+-+-+                      +-+-+-+-+");
+		do Output.println();
+		do Main.noLeakPrintString("           |4|5|6|D|                      |Q|W|E|R|");
+		do Output.println();
+		do Main.noLeakPrintString("           +-+-+-+-+          =>          +-+-+-+-+");
+		do Output.println();
+		do Main.noLeakPrintString("           |7|8|9|E|                      |A|S|D|F|");
+		do Output.println();
+		do Main.noLeakPrintString("           +-+-+-+-+                      +-+-+-+-+");
+		do Output.println();
+		do Main.noLeakPrintString("           |A|0|B|F|                      |Z|X|C|V|");
+		do Output.println();
+		do Main.noLeakPrintString("           +-+-+-+-+                      +-+-+-+-+");
+		do Output.println();
+		do Output.println();
+		do Main.noLeakPrintString("To close a running game, press the ESC button.");
+		do Output.println();
+		do Output.println();
+		do Main.noLeakPrintString("The available roms are:");
+		do Output.println();
+		do Main.noLeakPrintString("1.15PUZZLE   2.BLITZ     3.CONNECT4   4.GUESS     5.INVADERS");
+		do Output.println();
+		do Main.noLeakPrintString("6.KALEID     7.MAZE      8.MERLIN     9.MISSILE   10.PUZZLE");
+		do Output.println();
+		do Main.noLeakPrintString("11.TANK      12.TICTAC   13.UFO       14.VERS     15.WIPEOFF");
+		do Output.println();
+		do Output.println();
+		let chosenRom = Keyboard.readInt("Please choose one rom of the above (1-15): ");
+		return chosenRom;
+	}
+	
+	/**
+		Loads the selected ROM into the emulator
+		@param rom - the selected ROM
+	*/
+	method void loadRom(Rom rom) {
+		var int i;
+		var int romSize;
+		var Array romBytes;
+		
+		// Get the size of the ROM
+		let romSize = rom.getRomSize();
+		
+		// Get the content of the ROM
+		let romBytes = rom.getRomBytes();
+		let i = 0;
+		
+		// Load the ROM into memory, starting at 0x100
+		while (i < romSize) {
+			let memory[256 + i] = romBytes[i];
+			let i = i + 1;
+		}
+		
+		// Clear the screen
+		let i = 0;
+		while (i < 2048) {
+			let screen[i] = false;
+			let i = i + 1;
+		}
+		
+		// Clear all of the registers/stack/key presses
+		let i = 0;
+		
+		while (i < 16) {
+			let vx[i] = 0;
+			let stack[i] = 0;
+			let keyPresses[i] = false;
+			let i = i + 1;
+		}
+		
+		// Initialize the pointers, the I register and the delay timer
+		let pc = 512;
+		let stackPointer = 0;
+		let iRegister = 0;
+		let delayTimer = 0;
+		
+		// Print keys
+		do Main.noLeakPrintString(rom.getKeys());
+		return;
+	}
+	
+	/**
+		The function draws a pixel on screen with a given color
+		
+		@param x - the x coordinate
+		@param y - the y coordinate
+		@param color - the color. true for black, false for white
+	*/
+	method void drawPixel(int x, int y, boolean color) {
+		var int i, j;
+		
+		// Making sure we don't draw out of the screen
+		if ((x < 0) | ((ratio * x) > 511) | (y < 0) | ((ratio * y) > 255)) {
+			return;
+		}
+		
+		do Screen.setColor(color);
+		let i = 0;
+		
+		// Draw [ratio] pixels every time. This enlarges the usual 64x32 CHIP-8 screen
+		while (i < ratio) {
+			let j = 0;
+			
+			while (j < ratio) {
+				do Screen.drawPixel(padding + (ratio * x) + i, (padding / 4) + (ratio * y) + j);
+				
+				let j = j + 1;
+			}
+			
+			let i = i + 1;
+		}
+		
+		return;
+	}
+	
+	/**
+		Get the keys the user clicked on and set the keyPresses array
+	*/
+	method void getUserInput() {
+		var int key;
+		var int i;
+		
+		let key = Keyboard.keyPressed();
+		let i = 0;
+		
+		while (i < 16) {
+			let keyPresses[i] = false;
+			let i = i + 1;
+		}
+		
+		// ESC
+		if (key = 140) {
+			let isRunning = false;
+		}
+		
+		if (key = 88) { // X
+			let keyPresses[0] = true;
+		}
+		
+		if (key = 49) { // 1
+			let keyPresses[1] = true;
+		}
+		
+		if (key = 50) { // 2
+			let keyPresses[2] = true;
+		}
+		
+		if (key = 51) { // 3
+			let keyPresses[3] = true;
+		}
+		
+		if (key = 81) { // Q
+			let keyPresses[4] = true;
+		}
+		
+		if (key = 87) { // W
+			let keyPresses[5] = true;
+		}
+		
+		if (key = 69) { // E
+			let keyPresses[6] = true;
+		}
+		
+		if (key = 65) { // A
+			let keyPresses[7] = true;
+		}
+		
+		if (key = 83) { // S
+			let keyPresses[8] = true;
+		}
+		
+		if (key = 68) { // D
+			let keyPresses[9] = true;
+		}
+		
+		if (key = 90) { // Z
+			let keyPresses[10] = true;
+		}
+		
+		if (key = 67) { // C
+			let keyPresses[11] = true;
+		}
+		
+		if (key = 52) { // 4
+			let keyPresses[12] = true;
+		}
+		
+		if (key = 82) { // R
+			let keyPresses[13] = true;
+		}
+		
+		if (key = 70) { // F
+			let keyPresses[14] = true;
+		}
+		
+		if (key = 86) { // V
+			let keyPresses[15] = true;
+		}
+		
+		return;
+	}
+	
+	/**
+		The play function plays the ROM, after it's loaded
+	*/
+	method void play(Rom rom) {
+		let isRunning = true;
+		
+		// While the game is running
+		while (isRunning)
+		{
+			// Get user input
+			do getUserInput();
+			
+			// Fetch and execute next opcode
+			do execute();
+			
+			// Decrease the delay timer if needed
+			if (delayTimer > 0)  {
+                let delayTimer = delayTimer - 1;
+            }
+		}
+		
+		return;
+	}
+	
+	/**
+		Gets the first hexadecimal digit from left of a 4 hexadecimal digit instruction
+		
+		@param instruction - the 4 hexadecimal digit instruction
+		@return the digit that was read
+	*/
+	method int getDigitOne(int instruction) {
+		return (instruction & (-4096) / 4096) & 15;
+	}
+	
+	/**
+		Gets the second hexadecimal digit from left of a 4 hexadecimal digit instruction
+		
+		@param instruction - the 4 hexadecimal digit instruction
+		@return the digit that was read
+	*/
+	method int getDigitTwo(int instruction) {
+		return instruction & 3840 / 256;
+	}
+	
+	/**
+		Gets the third hexadecimal digit from left of a 4 hexadecimal digit instruction
+		
+		@param instruction - the 4 hexadecimal digit instruction
+		@return the digit that was read
+	*/
+	method int getDigitThree(int instruction) {
+		return instruction & 240 / 16;
+	}
+	
+	/**
+		Gets the forth hexadecimal digit from left of a 4 hexadecimal digit instruction
+		
+		@param instruction - the 4 hexadecimal digit instruction
+		@return the digit that was read
+	*/
+	method int getDigitFour(int instruction) {
+		return instruction & 15;
+	}
+	
+	/**
+		Gets the last two hexadecimal digits from left of a 4 hexadecimal digit instruction
+		
+		@param instruction - the 4 hexadecimal digit instruction
+		@return the last two digits that was read
+	*/
+	method int getLastTwoDigits(int instruction) {
+		return instruction & 255;
+	}
+	
+	/**
+		Gets the last three hexadecimal digits from left of a 4 hexadecimal digit instruction
+		
+		@param instruction - the 4 hexadecimal digit instruction
+		@return the last three digits that was read
+	*/
+	method int getLastThreeDigits(int instruction) {
+		return instruction & 4095;
+	}
+	
+	/**
+		Gets the memory value at a certain address
+		
+		@param address - the memory address
+		@return the memory value
+	*/
+	method int getMemory(int address) {
+		var int value;
+		let value = memory[address / 2];
+		
+		if (address & 1 = 0) { // is even
+			return (value & (-256) / 256) & 255;
+		}
+		
+		return (value & 255);
+	}
+	
+	/**
+		Sets the memory value at a certain address
+		
+		@param address - the memory address
+		@return the memory value to set
+	*/
+	method void setMemory(int address, int value) {
+		var int newValue;
+		let newValue = memory[address / 2];
+		
+		if (address & 1 = 0) { // is even
+			let newValue = newValue & 255 + MathUtils.shiftLeftMultiple(value, 8);
+		}
+		else {
+			let newValue = newValue & (-256) + value;
+		}
+		
+		let memory[address / 2] = newValue;
+		
+		return;
+	}
+	
+	/**
+		Read the current CHIP-8 instruction and execute it
+		The documentation can be found on Wikipedia
+	*/
+	method void execute() {
+		var int instruction;
+		var int i, j, x, y;
+		
+		// Get the current instruction
+		let instruction = MathUtils.shiftLeftMultiple(getMemory(pc), 8) + getMemory(pc + 1);
+
+		// 00E0 - CLS
+		if (instruction = 224) {
+			let i = 0;
+			
+			while (i < (2048)) { // 64 * 32
+				let screen[i] = false;
+				let i = i + 1;
+			}
+			
+			do Screen.setColor(false);
+			do Screen.drawRectangle(padding, padding / 4, padding + MathUtils.shiftLeftMultiple(ratio, 6), padding / 4 + MathUtils.shiftLeftMultiple(ratio, 5));
+			
+			let pc = pc + 2;
+			return;
+		}
+		
+		// 00EE - RET
+		if (instruction = 238) {
+			let stackPointer = stackPointer - 1;
+			let pc = stack[stackPointer];
+			let pc = pc + 2;
+			return;
+		}
+		
+		// JP addr
+		if (getDigitOne(instruction) = 1) {
+			let pc = getLastThreeDigits(instruction);
+			return;
+		}
+		
+		// CALL addr
+		if (getDigitOne(instruction) = 2) {
+			let stack[stackPointer] = pc;
+			let stackPointer = stackPointer + 1;
+			let pc = getLastThreeDigits(instruction);
+			return;
+		}
+		
+		// SE Vx, byte
+		if (getDigitOne(instruction) = 3) {
+			if (vx[getDigitTwo(instruction)] = getLastTwoDigits(instruction)) {
+				let pc = pc + 4;
+			}
+			else {
+				let pc = pc + 2;
+			}
+			
+			return;
+		}
+		
+		// SNE Vx, byte
+		if (getDigitOne(instruction) = 4) {
+			if (vx[getDigitTwo(instruction)] = getLastTwoDigits(instruction)) {
+				let pc = pc + 2;
+			}
+			else {
+				let pc = pc + 4;
+			}
+			
+			return;
+		}
+		
+		// SE Vx, Vy
+		if (getDigitOne(instruction) = 5) {
+			if (vx[getDigitTwo(instruction)] = vx[getDigitThree(instruction)]) {
+				let pc = pc + 4;
+			}
+			else {
+				let pc = pc + 2;
+			}
+			
+			return;
+		}
+		
+		// LD Vx, byte
+		if (getDigitOne(instruction) = 6) {
+			let vx[getDigitTwo(instruction)] = getLastTwoDigits(instruction);
+			let pc = pc + 2;
+			
+			return;
+		}
+		
+		// OR Vx, Vy
+		if (getDigitOne(instruction) = 7) {
+			let x = getDigitTwo(instruction);
+			let vx[x] = (vx[x] + getLastTwoDigits(instruction)) & 255;
+			
+			let pc = pc + 2;
+			return;
+		}
+		
+		// Operators
+		if (getDigitOne(instruction) = 8) {
+			let x = getDigitTwo(instruction);
+			let y = getDigitThree(instruction);
+			
+			// LD Vx, Vy
+			if (getDigitFour(instruction) = 0) {
+				let vx[x] = vx[y];
+				let pc = pc + 2;
+				
+				return;
+			}
+			
+			// OR Vx, Vy
+			if (getDigitFour(instruction) = 1) {
+				let vx[x] = vx[x] | vx[y];
+				let pc = pc + 2;
+				
+				return;
+			}
+			
+			// AND Vx, Vy
+			if (getDigitFour(instruction) = 2) {
+				let vx[x] = vx[x] & vx[y];
+				let pc = pc + 2;
+				
+				return;
+			}
+			
+			// XOR Vx, Vy
+			if (getDigitFour(instruction) = 3) {
+				let vx[x] = MathUtils.xor(vx[x], vx[y]);
+				let pc = pc + 2;
+				
+				return;
+			}
+			
+			// ADD Vx, Vy
+			if (getDigitFour(instruction) = 4) {
+				let vx[x] = vx[x] + vx[y];
+				let vx[15] = 0;
+				
+				if (vx[x] > 255) {
+					let vx[15] = 1;
+					let vx[x] = vx[x] & 255;
+				}
+				
+				let pc = pc + 2;
+				return;
+			}
+			
+			// SUB Vx, Vy
+			if (getDigitFour(instruction) = 5) {
+				let vx[15] = 1;
+				
+				if (vx[x] < vx[y]) {
+					let vx[15] = 0;
+				}
+				
+				let vx[x] = (vx[x] - vx[y]) & 255;
+				let pc = pc + 2;
+				return;
+			}
+			
+			// SHR Vx {, Vy}
+			if (getDigitFour(instruction) = 6) {
+				let vx[15] = vx[x] & 1;
+				let vx[x] = (vx[x] / 2) & 255;
+				
+				let pc = pc + 2;
+				return;
+			}
+			
+			// SUBN Vx, Vy
+			if (getDigitFour(instruction) = 7) {
+				let vx[15] = 1;
+				
+				if (vx[y] < vx[x]) {
+					let vx[15] = 0;
+				}
+				
+				let vx[x] = (vx[y] - vx[x]) & 255; // same as above. might not work
+				let pc = pc + 2;
+				return;
+			}
+			
+			// SHL Vx {, Vy}
+			if (getDigitFour(instruction) = 14) {
+				let vx[15] = 1;
+				
+				if (vx[x] & 128 = 0) {
+					let vx[15] = 0;
+				}
+				
+				let vx[x] = (vx[x] + vx[x]) & 255;
+		
+				let pc = pc + 2;
+				return;
+			}
+		}
+		
+		// SNE Vx, Vy
+		if (getDigitOne(instruction) = 9) {
+			if (vx[getDigitTwo(instruction)] = vx[getDigitThree(instruction)]) {
+				let pc = pc + 2;
+			}
+			else {
+				let pc = pc + 4;
+			}
+			
+			return;
+		}
+		
+		// LD I, addr
+		if (getDigitOne(instruction) = 10) {
+			let iRegister = getLastThreeDigits(instruction);
+			let pc = pc + 2;
+			return;
+		}
+		
+		// JP V0, addr
+		if (getDigitOne(instruction) = 11) {
+			let pc = (getLastThreeDigits(instruction) + vx[0]) & 4095;
+			return;
+		}
+		
+		// RND Vx, byte
+		if (getDigitOne(instruction) = 12) {
+			let vx[getDigitTwo(instruction)] = MathUtils.getNextRandom() & getLastTwoDigits(instruction);
+			let pc = pc + 2;
+			return;
+		}
+		
+		// DRW Vx, Vy, nibble
+		if (getDigitOne(instruction) = 13) {
+			do executeDrawInstruction(instruction);
+			
+			let pc = pc + 2;
+			return;
+		}
+		
+		// Skip operations
+		if (getDigitOne(instruction) = 14) {
+		
+			// SKP Vx
+			if (getLastTwoDigits(instruction) = 158) {
+				if (keyPresses[vx[getDigitTwo(instruction)]]) {
+					let pc = pc + 4;
+				}
+				else {
+					let pc = pc + 2;
+				}
+				
+				return;
+			}
+			
+			// SKNP Vx
+			if (getLastTwoDigits(instruction) = 161) {
+				if (keyPresses[vx[getDigitTwo(instruction)]]) {
+					let pc = pc + 2;
+				}
+				else {
+					let pc = pc + 4;
+				}
+				
+				return;
+			}
+		}
+
+		// Load operations
+		if (getDigitOne(instruction) = 15) {
+			let x = getDigitTwo(instruction);
+			
+			// LD Vx, DT
+			if (getLastTwoDigits(instruction) = 7) {
+				let vx[x] = delayTimer;
+				let pc = pc + 2;
+				
+				return;
+			}
+			
+			// LD Vx, K
+			if (getLastTwoDigits(instruction) = 10) {
+				let i = 0;
+				
+				while (i < 16) {
+					if (keyPresses[i]) {
+						let vx[x] = i;
+						let pc = pc + 2;
+						return;
+					}
+					
+					let i = i + 1;
+				}
+				
+				return;
+			}
+			
+			// LD DT, Vx
+			if (getLastTwoDigits(instruction) = 21) {
+				let delayTimer = vx[x];
+				let pc = pc + 2;
+				
+				return;
+			}
+			
+			// LD ST, Vx
+			if (getLastTwoDigits(instruction) = 24) {
+				// do nothing. sets sound timer
+				let pc = pc + 2;
+				return;
+			}
+			
+			// ADD I, Vx
+			if (getLastTwoDigits(instruction) = 30) {			
+				let iRegister = (iRegister + vx[x]) & 4095;
+				
+				let pc = pc + 2;
+				return;
+			}
+			
+			// LD F, Vx
+			if (getLastTwoDigits(instruction) = 41) {
+				let iRegister = vx[x] * 5;
+				let pc = pc + 2;
+				return;
+			}
+			
+			// LD B, Vx
+			if (getLastTwoDigits(instruction) = 51) {
+				do setMemory(iRegister, vx[x] / 100);
+				do setMemory(iRegister + 1, MathUtils.modulo(vx[x] / 10, 10));
+				do setMemory(iRegister + 2, MathUtils.modulo(vx[x], 10));
+				let pc = pc + 2;
+				
+				return;
+			}
+			
+			// LD [I], Vx
+			if (getLastTwoDigits(instruction) = 85) {
+				let i = 0;
+				
+				while ((i < x) | (i = x)) {
+					do setMemory(iRegister + i, vx[i]);
+					let i = i + 1;
+				}
+				
+				let pc = pc + 2;
+				
+				return;
+			}
+			
+			// LD Vx, [I]
+			if (getLastTwoDigits(instruction) = 101) {
+				let i = 0;
+				
+				while ((i < x) | (i = x)) {
+					let vx[i] = getMemory(iRegister + i);
+					let i = i + 1;
+				}
+				
+				let pc = pc + 2;
+				
+				return;
+			}
+		}
+		
+		return;
+	}
+	
+	/**
+		Executes a draw instruction
+		
+		@param instruction - the draw instruction to execute
+	*/
+	method void executeDrawInstruction(int instruction) {
+		var int startX, startY;
+		var int x, y;
+		var int height;
+		var int i, j;
+		var int screenIndex;
+		var int pixel;
+		var int powerOfTwo;
+
+		// Set the collision flag to 0
+		let vx[15] = 0;
+
+		// Get the startX, startY and height of the sprite
+		let startX = vx[getDigitTwo(instruction)];
+		let startY = vx[getDigitThree(instruction)];
+		let height = getDigitFour(instruction);
+
+		let i = 0;
+		
+		while (i < height) {
+			let pixel = getMemory(iRegister + i);
+			let powerOfTwo = 1;
+			
+			let j = 7;
+			while (j > -1) {
+				if (~((pixel & powerOfTwo) = 0)) {					
+					let x = MathUtils.modulo(startX + j, 64);
+					let y = MathUtils.modulo(startY + i, 32);
+					
+					// Get the screen index as a one dimensional array index
+					let screenIndex = MathUtils.shiftLeftMultiple(y, 6) + x;
+					
+					// If there's a collision, set V[0xF] to 1
+					if (screen[screenIndex]) {
+						let vx[15] = 1;
+					}
+					
+					// XOR the pixel
+					let screen[screenIndex] = ~screen[screenIndex];
+					
+					// Draw the pixel
+					do drawPixel(x, y, screen[screenIndex]);
+				}
+			
+				let powerOfTwo = powerOfTwo + powerOfTwo;
+				let j = j - 1;
+			}
+			
+			let i = i + 1;
+		}
+		
+		return;
+	}
+}
